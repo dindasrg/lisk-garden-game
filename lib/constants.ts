@@ -1,0 +1,4 @@
+export const LISK_GARDEN_CONTRACT_ADDRESS =
+  process.env.NEXT_PUBLIC_CONTRACT_ADDRESS ?? "";
+
+
