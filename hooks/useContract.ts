@@ -13,16 +13,6 @@ export function useContract() {
   const { client } = usePanna()
 
   const contractInfo = useMemo(() => {
-    const mockAddress = process.env.NEXT_PUBLIC_MOCK_ADDRESS
-    if (mockAddress) {
-        return {
-          client: client ?? null,                  // was: (client) || ({})
-          account: { address: mockAddress }, // was: ({ ... } as any) || null
-          isConnected: true,
-          address: mockAddress,
-          contractAddress: LISK_GARDEN_CONTRACT_ADDRESS,
-        }
-      }
     return {
       client: client || null,
       account: activeAccount || null,

@@ -30,17 +30,61 @@ export async function getUserPlantList(
     address: LISK_GARDEN_CONTRACT_ADDRESS,
   });
 
-  const plantList = await readContract({
-    contract,
-    method:
-      "function getUserPlantList(address plantOwner) public view returns (tuple(uint256 id, uint256 seedId, address owner, string name, uint8 stage, uint256 plantedDate, uint256 lastWatered, uint8 waterLevel, bool isExists, bool isDead)[])",
-    params: [userAddress],
-  });
+  try {
+    const plantList = await readContract({
+      contract,
+      method:
+        "function getUserPlantList(address plantOwner) public view returns ((uint256,uint256,address,string,uint8,uint256,uint256,uint8,bool,bool)[])",
+      params: [userAddress],
+    });
 
-  // Parse each plant from the array
-  return (plantList as readonly unknown[]).map((rawPlant) =>
-    parsePlantData(rawPlant)
-  );
+    console.log("plantlist", plantList);
+
+    // Handle empty array or null response
+    if (!plantList || (Array.isArray(plantList) && plantList.length === 0)) {
+      return [];
+    }
+
+    // Parse each plant from the array
+    return (plantList as readonly unknown[]).map((rawPlant) =>
+      parsePlantData(rawPlant)
+    );
+  } catch (error: unknown) {
+    // Handle array out-of-bounds errors or other contract errors
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    // Check if error has a code property (like {code: 3, message: "...", data: "0x..."})
+    const errorObj = error as {
+      code?: number;
+      message?: string;
+      data?: string;
+    };
+    const hasPanicCode =
+      errorObj?.code === 3 || errorObj?.data?.includes("0x32");
+
+    // Check if it's an array out-of-bounds error (panic code 0x32)
+    if (
+      hasPanicCode ||
+      errorMessage.includes("array out-of-bounds") ||
+      errorMessage.includes("0x32") ||
+      errorMessage.includes("panic") ||
+      errorMessage.includes("execution reverted")
+    ) {
+      console.warn(
+        "Contract error when fetching plant list (likely no plants or array issue):",
+        {
+          message: errorMessage,
+          code: errorObj?.code,
+          data: errorObj?.data,
+        }
+      );
+      // Return empty array if there's a contract error - user probably has no plants
+      return [];
+    }
+
+    // Re-throw other errors
+    throw error;
+  }
 }
 
 /**
@@ -71,6 +115,8 @@ export async function getSeed(
       "function seeds(uint256) public view returns (uint256 id, string name, uint256 price, uint256 stock, uint256 stageDuration, uint256 harvestReward, uint256 depletionTime, uint8 depletionRate)",
     params: [seedId],
   });
+
+  console.log("seed", seed);
 
   const isArray = Array.isArray(seed);
   const getBigInt = (idx: number): bigint => {
@@ -122,14 +168,118 @@ export async function calculateWaterLevel(
     address: LISK_GARDEN_CONTRACT_ADDRESS,
   });
 
-  const waterLevel = await readContract({
-    contract,
-    method:
-      "function calculateWaterLevel(uint256 plantId, address plantOwner) public view returns (uint8)",
-    params: [plantId, plantOwner],
+  console.log("masuk calc water");
+  console.log("plantId", plantId);
+  console.log("plantOwner", plantOwner);
+
+  try {
+    const waterLevel = await readContract({
+      contract,
+      method:
+        "function calculateWaterLevel(uint256 plantId, address plantOwner) public view returns (uint8)",
+      params: [plantId-BigInt(1), plantOwner],
+    });
+    console.log("waterlevel", waterLevel);
+
+    return Number(waterLevel);
+  } catch (error) {
+    console.error("Error calculating water level:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get user seeds inventory
+ */
+export async function getUserSeeds(
+  client: PannaClient,
+  userAddress: string
+): Promise<{ id: bigint; count: bigint }[]> {
+  const contract = getContract({
+    client,
+    chain: liskSepolia,
+    address: LISK_GARDEN_CONTRACT_ADDRESS,
   });
 
-  return Number(waterLevel);
+  // Note: This requires the contract to have a getter for userSeeds array
+  // Since Solidity doesn't auto-generate getters for arrays of structs,
+  // you may need to add a custom getter function in the contract
+  try {
+    const userSeeds = await readContract({
+      contract,
+      method:
+        "function userSeeds(address, uint256) public view returns (uint256 id, uint256 count)",
+      params: [userAddress, BigInt(0)], // This will need to be called multiple times for each index
+    });
+
+    // This is a simplified version - in practice you'd need to know the array length
+    // or have a custom getter function in the contract
+    return [];
+  } catch (error) {
+    console.warn(
+      "getUserSeeds not fully implemented - requires contract modification"
+    );
+    return [];
+  }
+}
+
+/**
+ * Get garden counter
+ */
+export async function getGardenCounter(client: PannaClient): Promise<bigint> {
+  const contract = getContract({
+    client,
+    chain: liskSepolia,
+    address: LISK_GARDEN_CONTRACT_ADDRESS,
+  });
+
+  const counter = await readContract({
+    contract,
+    method: "function gardenCounter() public view returns (uint256)",
+    params: [],
+  });
+
+  return BigInt(counter as string | number | bigint);
+}
+
+/**
+ * Get plant counter
+ */
+export async function getPlantCounter(client: PannaClient): Promise<bigint> {
+  const contract = getContract({
+    client,
+    chain: liskSepolia,
+    address: LISK_GARDEN_CONTRACT_ADDRESS,
+  });
+
+  const counter = await readContract({
+    contract,
+    method: "function plantCounter() public view returns (uint256)",
+    params: [],
+  });
+
+  return BigInt(counter as string | number | bigint);
+}
+
+/**
+ * Get upgrade garden cost constant
+ */
+export async function getUpgradeGardenCost(
+  client: PannaClient
+): Promise<bigint> {
+  const contract = getContract({
+    client,
+    chain: liskSepolia,
+    address: LISK_GARDEN_CONTRACT_ADDRESS,
+  });
+
+  const cost = await readContract({
+    contract,
+    method: "function UPGRADE_GARDEN_COST() public view returns (uint256)",
+    params: [],
+  });
+
+  return BigInt(cost as string | number | bigint);
 }
 
 /**
@@ -159,11 +309,10 @@ export async function getGarden(
   });
 
   const isArray = Array.isArray(garden);
-  const id = BigInt(
-    isArray
-      ? (garden as unknown[])[0] ?? 0
-      : (garden as { id?: bigint }).id ?? 0
-  );
+  const rawId = isArray
+    ? (garden as unknown[])[0]
+    : (garden as { id?: bigint }).id;
+  const id = typeof rawId === "bigint" ? rawId : BigInt(Number(rawId) || 0);
 
   // If id is 0, garden doesn't exist
   if (id === BigInt(0)) return null;
@@ -220,7 +369,8 @@ export async function claimGarden(
       chain: liskSepolia,
       address: LISK_GARDEN_CONTRACT_ADDRESS,
     }),
-    method: "function claimGarden(address gardenOwner) public returns (uint256)",
+    method:
+      "function claimGarden(address gardenOwner) public returns (uint256)",
     params: [gardenOwner],
   });
 
@@ -234,13 +384,16 @@ export async function claimGarden(
 }
 
 /**
- * Upgrade garden slots (costs 0.002 ETH)
+ * Upgrade garden slots (costs UPGRADE_GARDEN_COST from contract)
  */
 export async function upgradeGarden(
   client: PannaClient,
   account: Account,
   gardenOwner: string
 ): Promise<string> {
+  // Get the upgrade cost from the contract
+  const upgradeCost = await getUpgradeGardenCost(client);
+
   const tx = prepareContractCall({
     contract: getContract({
       client,
@@ -250,7 +403,7 @@ export async function upgradeGarden(
     method:
       "function upgradeGarden(address gardenOwner) public payable returns (uint256)",
     params: [gardenOwner],
-    value: toWei("0.002"),
+    value: upgradeCost,
   });
 
   const result = await sendTransaction({
@@ -292,7 +445,23 @@ export async function buySeed(
     transaction: tx,
   });
 
-  await waitForReceipt(result);
+  // Wait for receipt and verify it was successful
+  const receipt = await waitForReceipt(result);
+
+  // Verify the transaction hash exists
+  if (!result.transactionHash) {
+    throw new Error(
+      "Transaction hash not found. Transaction may not have been sent."
+    );
+  }
+
+  // Log transaction details for debugging
+  console.log("Transaction sent:", {
+    transactionHash: result.transactionHash,
+    chainId: liskSepolia.id,
+    receipt: receipt ? "received" : "not received",
+  });
+
   return result.transactionHash;
 }
 
@@ -383,7 +552,35 @@ export async function waterPlant(
 }
 
 /**
- * Harvest a plant
+ * Deposit ETH to the contract
+ */
+export async function deposit(
+  client: PannaClient,
+  account: Account,
+  amount: bigint
+): Promise<string> {
+  const tx = prepareContractCall({
+    contract: getContract({
+      client,
+      chain: liskSepolia,
+      address: LISK_GARDEN_CONTRACT_ADDRESS,
+    }),
+    method: "function deposit() public payable",
+    params: [],
+    value: amount,
+  });
+
+  const result = await sendTransaction({
+    account,
+    transaction: tx,
+  });
+
+  await waitForReceipt(result);
+  return result.transactionHash;
+}
+
+/**
+ * Harvest a plant - rewards are sent to contract owner, not plant owner
  */
 export async function harvestPlant(
   client: PannaClient,
@@ -418,7 +615,10 @@ export async function harvestPlant(
  * Check if plant stage is out of sync (on-chain stage < expected stage)
  * Note: This calculation now depends on seed-specific stageDuration
  */
-export function isStageOutOfSync(plant: Plant, seedStageDuration: bigint): boolean {
+export function isStageOutOfSync(
+  plant: Plant,
+  seedStageDuration: bigint
+): boolean {
   if (plant.isDead || !plant.isExists) return false;
   const expectedStage = getExpectedStage(plant, seedStageDuration);
   return plant.stage < expectedStage;
@@ -426,10 +626,11 @@ export function isStageOutOfSync(plant: Plant, seedStageDuration: bigint): boole
 
 /**
  * Calculate expected stage based on time (what stage the plant SHOULD be at)
- * Stages advance based on seed-specific stageDuration:
- * - SPROUT: after 1x stageDuration
- * - GROWING: after 2x stageDuration
- * - BLOOMING: after 3x stageDuration
+ * Matches contract logic exactly:
+ * - SEED: initial stage
+ * - SPROUT: timeSincePlanted <= stageDuration
+ * - GROWING: timeSincePlanted > stageDuration * 2
+ * - BLOOMING: timeSincePlanted > stageDuration * 3
  */
 export function getExpectedStage(
   plant: Plant,
@@ -439,18 +640,17 @@ export function getExpectedStage(
 
   const now = BigInt(Math.floor(Date.now() / 1000));
   const planted = plant.plantedDate;
-  const timePassed = now - planted;
+  const timeSincePlanted = now - planted;
 
-  // Calculate which stage based on time
-  // Stages advance: SPROUT after 1x, GROWING after 2x, BLOOMING after 3x
-  if (timePassed <= seedStageDuration) {
-    return GrowthStage.SEED;
-  } else if (timePassed > seedStageDuration * BigInt(3)) {
+  // Match contract logic exactly from updatePlantStage function
+  if (timeSincePlanted <= seedStageDuration) {
+    return GrowthStage.SPROUT;
+  } else if (timeSincePlanted > seedStageDuration * BigInt(3)) {
     return GrowthStage.BLOOMING;
-  } else if (timePassed > seedStageDuration * BigInt(2)) {
+  } else if (timeSincePlanted > seedStageDuration * BigInt(2)) {
     return GrowthStage.GROWING;
   } else {
-    return GrowthStage.SPROUT;
+    return GrowthStage.SPROUT; // This case shouldn't happen based on contract logic
   }
 }
 
@@ -488,9 +688,7 @@ export function parsePlantData(rawPlant: unknown): Plant {
   // Plant struct: (uint256 id, uint256 seedId, address owner, string name, uint8 stage, uint256 plantedDate, uint256 lastWatered, uint8 waterLevel, bool isExists, bool isDead)
   return {
     id: getBigIntValue(
-      isArray
-        ? (rawPlant as unknown[])[0]
-        : (rawPlant as { id?: bigint }).id
+      isArray ? (rawPlant as unknown[])[0] : (rawPlant as { id?: bigint }).id
     ),
     seedId: getBigIntValue(
       isArray
@@ -531,7 +729,7 @@ export function parsePlantData(rawPlant: unknown): Plant {
       isArray
         ? (rawPlant as unknown[])[8]
         : (rawPlant as { exists?: boolean; isExists?: boolean }).isExists ??
-          (rawPlant as { exists?: boolean; isExists?: boolean }).exists
+            (rawPlant as { exists?: boolean; isExists?: boolean }).exists
     ),
     isDead: getBooleanValue(
       isArray
