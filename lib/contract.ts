@@ -38,8 +38,6 @@ export async function getUserPlantList(
       params: [userAddress],
     });
 
-    console.log("plantlist", plantList);
-
     // Handle empty array or null response
     if (!plantList || (Array.isArray(plantList) && plantList.length === 0)) {
       return [];
@@ -113,12 +111,10 @@ export async function getSeed(
     contract,
     method:
       "function seeds(uint256) public view returns (uint256 id, string name, uint256 price, uint256 stock, uint256 stageDuration, uint256 harvestReward, uint256 depletionTime, uint8 depletionRate)",
-    params: [seedId],
-  });
+      params: [seedId],
+    });
 
-  console.log("seed", seed);
-
-  const isArray = Array.isArray(seed);
+    const isArray = Array.isArray(seed);
   const getBigInt = (idx: number): bigint => {
     const value = isArray
       ? (seed as unknown[])[idx]
@@ -168,22 +164,16 @@ export async function calculateWaterLevel(
     address: LISK_GARDEN_CONTRACT_ADDRESS,
   });
 
-  console.log("masuk calc water");
-  console.log("plantId", plantId);
-  console.log("plantOwner", plantOwner);
-
   try {
     const waterLevel = await readContract({
       contract,
       method:
         "function calculateWaterLevel(uint256 plantId, address plantOwner) public view returns (uint8)",
-      params: [plantId-BigInt(1), plantOwner],
+      params: [plantId - BigInt(1), plantOwner],
     });
-    console.log("waterlevel", waterLevel);
 
     return Number(waterLevel);
   } catch (error) {
-    console.error("Error calculating water level:", error);
     throw error;
   }
 }
@@ -304,7 +294,7 @@ export async function getGarden(
   const garden = await readContract({
     contract,
     method:
-      "function gardens(address) public view returns (uint256 id, address owner, uint256 totalSlot, uint256 slotReserved, uint256 establishedDate)",
+      "function getGardensDetail(address gardenOwner) public view returns (uint256 id, address owner, uint256 totalSlot, uint256 slotReserved, uint256 establishedDate)",
     params: [gardenOwner],
   });
 
@@ -455,13 +445,6 @@ export async function buySeed(
     );
   }
 
-  // Log transaction details for debugging
-  console.log("Transaction sent:", {
-    transactionHash: result.transactionHash,
-    chainId: liskSepolia.id,
-    receipt: receipt ? "received" : "not received",
-  });
-
   return result.transactionHash;
 }
 
@@ -605,6 +588,41 @@ export async function harvestPlant(
 
   await waitForReceipt(result);
   return result.transactionHash;
+}
+
+export async function getRewardsEarned(
+  client: PannaClient,
+  userAddress: string
+): Promise<bigint> {
+  const contract = getContract({
+    client,
+    chain: liskSepolia,
+    address: LISK_GARDEN_CONTRACT_ADDRESS,
+  });
+
+  try {
+    const rewards = await readContract({
+      contract,
+      method:
+        "function getRewardsEarned(address gardenOwner) public view returns (uint256)",
+      params: [userAddress],
+    });
+
+    // Convert to bigint if needed
+    if (typeof rewards === "bigint") {
+      return rewards;
+    }
+    if (typeof rewards === "number") {
+      return BigInt(rewards);
+    }
+    if (typeof rewards === "string") {
+      return BigInt(rewards);
+    }
+    return BigInt(0);
+  } catch (error: unknown) {
+    // Re-throw other errors
+    throw error;
+  }
 }
 
 // ============================================================================

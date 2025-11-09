@@ -2,8 +2,9 @@
 
 import { X } from "lucide-react";
 import { useContract } from "@/hooks/useContract";
+import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect } from "react";
-import { buySeed as buySeedContract, getSeed, plantSeed as plantSeedContract, claimGarden, getGarden } from "@/lib/contract";
+import { buySeed as buySeedContract, getSeed, plantSeed as plantSeedContract, getGarden } from "@/lib/contract";
 import type { Account } from "thirdweb/wallets";
 
 // Helper function to format bigint to ether string
@@ -34,6 +35,7 @@ interface MarketplaceCardProps {
 
 export function MarketplaceCard({ isVisible, onClose, onBuySeed }: MarketplaceCardProps) {
   const { isConnected, client, account, address } = useContract();
+  const { toast } = useToast();
   const [loading, setLoading] = useState<number | null>(null);
   const [seeds, setSeeds] = useState<Seed[]>([]);
   const [loadingSeeds, setLoadingSeeds] = useState(true);
@@ -101,7 +103,6 @@ export function MarketplaceCard({ isVisible, onClose, onBuySeed }: MarketplaceCa
               stock: Number(seed.stock)
             };
           } catch (error) {
-            console.error(`Error fetching seed ${seedId}:`, error);
             return null;
           }
         });
@@ -110,7 +111,7 @@ export function MarketplaceCard({ isVisible, onClose, onBuySeed }: MarketplaceCa
         const validSeeds = fetchedSeeds.filter((s): s is Seed => s !== null);
         setSeeds(validSeeds);
       } catch (error) {
-        console.error("Error fetching seeds:", error);
+        // Silently handle error
       } finally {
         setLoadingSeeds(false);
       }
@@ -123,60 +124,49 @@ export function MarketplaceCard({ isVisible, onClose, onBuySeed }: MarketplaceCa
 
   const handleBuySeed = async (seedId: number) => {
     if (!isConnected) {
-      alert("Please connect your wallet first");
+      toast({
+        title: "Wallet not connected",
+        description: "Please connect your wallet first",
+        variant: "destructive",
+      });
       return;
     }
 
     if (!client || !account || !address) {
-      alert("Wallet not properly connected");
+      toast({
+        title: "Wallet error",
+        description: "Wallet not properly connected",
+        variant: "destructive",
+      });
       return;
     }
 
     // Type guard: ensure account is a full Account
     if (!('sendTransaction' in account) || !('signMessage' in account)) {
-      alert("Wallet not properly connected");
+      toast({
+        title: "Wallet error",
+        description: "Wallet not properly connected",
+        variant: "destructive",
+      });
       return;
     }
 
     setLoading(seedId);
-    let claimTxHash: string | null = null;
     try {
-      // First, check if user has a garden, if not, claim one
-      console.log("Checking if user has a garden...");
+      // Check if user has a garden before buying
       const garden = await getGarden(client, address);
       
       if (!garden) {
-        console.log("No garden found. Claiming garden...");
-        try {
-          claimTxHash = await claimGarden(
-            client,
-            account as Account,
-            address
-          );
-          
-          if (!claimTxHash) {
-            throw new Error("Garden claim transaction hash not returned. Transaction may have failed.");
-          }
+        throw new Error("You need to claim a garden first before buying seeds. Please go to your garden and claim it.");
+      }
 
-          // Verify transaction hash format
-          if (typeof claimTxHash !== 'string' || !claimTxHash.startsWith('0x')) {
-            throw new Error(`Invalid garden claim transaction hash: ${claimTxHash}`);
-          }
-
-          console.log(`Garden claimed! Transaction: ${claimTxHash}`);
-          console.log(`View on BlockScout: https://sepolia-blockscout.lisk.com/tx/${claimTxHash}`);
-        } catch (claimError) {
-          console.error("Error claiming garden:", claimError);
-          const claimErrorMessage = claimError instanceof Error ? claimError.message : "Failed to claim garden. Please try again.";
-          throw new Error(`Failed to claim garden: ${claimErrorMessage}\n\nYou need a garden to plant seeds.`);
-        }
-      } else {
-        console.log("Garden found:", { gardenId: garden.id, totalSlots: garden.totalSlot, reservedSlots: garden.slotReserved });
+      // Check if garden slots are full
+      if (garden.slotReserved >= garden.totalSlot) {
+        throw new Error("Your garden slots are full! Please upgrade your garden to plant more seeds.");
       }
 
       // Buy 1 seed
       const buyCount = BigInt(1);
-      console.log("Starting seed purchase...", { seedId, buyCount, address });
       
       const txHash = await buySeedContract(
         client,
@@ -195,11 +185,7 @@ export function MarketplaceCard({ isVisible, onClose, onBuySeed }: MarketplaceCa
         throw new Error(`Invalid transaction hash: ${txHash}`);
       }
       
-      console.log(`Seed ${seedId} purchased! Transaction: ${txHash}`);
-      console.log(`View on BlockScout: https://sepolia-blockscout.lisk.com/tx/${txHash}`);
-      
       // Now plant the seed automatically after purchase
-      console.log(`Planting seed ${seedId}...`);
       try {
         const plantTxHash = await plantSeedContract(
           client,
@@ -217,29 +203,17 @@ export function MarketplaceCard({ isVisible, onClose, onBuySeed }: MarketplaceCa
           throw new Error(`Invalid plant transaction hash: ${plantTxHash}`);
         }
 
-        console.log(`Seed ${seedId} planted! Transaction: ${plantTxHash}`);
-        console.log(`View on BlockScout: https://sepolia-blockscout.lisk.com/tx/${plantTxHash}`);
-        
-        // Build success message with all transactions
-        let successMessage = `Seed purchased and planted successfully! 🎉\n\n`;
-        if (claimTxHash) {
-          successMessage += `Garden Claim: ${claimTxHash.slice(0, 10)}...\n`;
-        }
-        successMessage += `Purchase: ${txHash.slice(0, 10)}...\n`;
-        successMessage += `Plant: ${plantTxHash.slice(0, 10)}...\n\n`;
-        successMessage += `View on BlockScout:\n`;
-        if (claimTxHash) {
-          successMessage += `Garden: https://sepolia-blockscout.lisk.com/tx/${claimTxHash}\n`;
-        }
-        successMessage += `Purchase: https://sepolia-blockscout.lisk.com/tx/${txHash}\n`;
-        successMessage += `Plant: https://sepolia-blockscout.lisk.com/tx/${plantTxHash}`;
-        
-        alert(successMessage);
+        toast({
+          title: "Success! 🎉",
+          description: `Seed purchased and planted successfully! Purchase: ${txHash.slice(0, 10)}... Plant: ${plantTxHash.slice(0, 10)}...`,
+        });
       } catch (plantError) {
-        console.error("Error planting seed:", plantError);
         const plantErrorMessage = plantError instanceof Error ? plantError.message : "Failed to plant seed. Please try again.";
-        // Still show success for purchase, but warn about planting failure
-        alert(`Seed purchased successfully! Transaction: ${txHash.slice(0, 10)}...\n\nHowever, planting failed: ${plantErrorMessage}\n\nYou can plant the seed manually later.`);
+        toast({
+          title: "Purchase successful",
+          description: `Seed purchased! However, planting failed: ${plantErrorMessage}. You can plant the seed manually later.`,
+          variant: "destructive",
+        });
       }
       
       // Refresh seeds list after purchase
@@ -264,7 +238,6 @@ export function MarketplaceCard({ isVisible, onClose, onBuySeed }: MarketplaceCa
               stock: Number(seed.stock)
             };
           } catch (error) {
-            console.error(`Error fetching seed ${id}:`, error);
             return null;
           }
         });
@@ -276,10 +249,12 @@ export function MarketplaceCard({ isVisible, onClose, onBuySeed }: MarketplaceCa
       
       onBuySeed?.(seedId);
     } catch (error) {
-      console.error("Error buying seed:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to buy seed. Please try again.";
-      console.error("Full error details:", error);
-      alert(`Error: ${errorMessage}\n\nPlease check:\n1. You have enough ETH balance\n2. The transaction was approved in your wallet\n3. The network is Sepolia`);
+      toast({
+        title: "Error",
+        description: `${errorMessage}. Please check: 1. You have enough ETH balance 2. The transaction was approved in your wallet 3. The network is Sepolia`,
+        variant: "destructive",
+      });
     } finally {
       setLoading(null);
     }

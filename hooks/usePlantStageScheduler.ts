@@ -25,7 +25,6 @@ export function usePlantStageScheduler() {
     // Type guard: ensure account is a full Account (not just { address: string })
     // Mock accounts don't have the required methods, so skip updates for them
     if (!('sendTransaction' in account) || !('signMessage' in account)) {
-      console.log('[PlantScheduler] Skipping update - account is not a full Account type')
       return
     }
 
@@ -50,28 +49,20 @@ export function usePlantStageScheduler() {
       })
 
       if (plantsNeedingUpdate.length === 0) {
-        console.log('[PlantScheduler] All plants are up to date')
         return
       }
-
-      console.log(`[PlantScheduler] Updating ${plantsNeedingUpdate.length} plant(s) stages...`)
 
       // Update each plant sequentially to avoid nonce conflicts
       for (const plant of plantsNeedingUpdate) {
         try {
-          console.log(`[PlantScheduler] Updating plant #${plant.id}...`)
           // Type assertion is safe here because we checked above
           await updatePlantStageContract(client, account as Account, plant.id)
-          console.log(`[PlantScheduler] Plant #${plant.id} updated successfully`)
         } catch (err) {
-          console.error(`[PlantScheduler] Failed to update plant #${plant.id}:`, err)
           // Continue with next plant even if one fails
         }
       }
-
-      console.log('[PlantScheduler] Batch update complete')
     } catch (err) {
-      console.error('[PlantScheduler] Error in scheduler:', err)
+      // Silently handle scheduler errors
     } finally {
       isProcessingRef.current = false
     }
@@ -83,8 +74,6 @@ export function usePlantStageScheduler() {
       return
     }
 
-    console.log('[PlantScheduler] Starting scheduler (runs every 60 seconds)')
-
     // Run immediately on mount
     updatePlantsStages()
 
@@ -94,7 +83,6 @@ export function usePlantStageScheduler() {
     }, 60000) // 60 seconds
 
     return () => {
-      console.log('[PlantScheduler] Stopping scheduler')
       clearInterval(intervalId)
     }
   }, [isConnected, plants.length, updatePlantsStages])

@@ -2,25 +2,25 @@
 
 import { useContract } from "@/hooks/useContract";
 import { useBalance } from "@/hooks/useBalance";
+import { useGarden } from "@/hooks/useGarden";
+import { useRewards } from "@/hooks/useRewards";
 import { Wallet, Sprout, HandCoins, ShoppingCart, Home } from "lucide-react";
 
 type View = 'garden' | 'marketplace' | 'my-garden';
 
 interface WalletSidebarProps {
-  activePlants?: number;
-  totalRewards?: string;
   currentView?: View;
   onViewChange?: (view: View) => void;
 }
 
 export function WalletSidebar({ 
-  activePlants = 2, 
-  totalRewards = "0.03",
   currentView = 'garden',
   onViewChange
 }: WalletSidebarProps) {
   const { address } = useContract();
+  const { garden } = useGarden();
   const { balance, loading: balanceLoading } = useBalance();
+  const { rewards, loading: rewardsLoading } = useRewards();
 
   return (
     <div className="w-80 p-6">
@@ -56,7 +56,7 @@ export function WalletSidebar({
             <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
               <Sprout className="w-4 h-4 text-white" />
             </div>
-            <span className="text-2xl font-bold text-white">{activePlants}</span>
+            <span className="text-2xl font-bold text-white">{garden?.slotReserved || 0}</span>
           </div>
           <span className="text-gray-300 text-sm">Total active plants</span>
         </div>
@@ -67,7 +67,11 @@ export function WalletSidebar({
             <div className="w-8 h-8 bg-green-600 rounded-lg flex items-center justify-center">
               <HandCoins className="w-4 h-4 text-white" />
             </div>
-            <span className="text-2xl font-bold text-white">{totalRewards}</span>
+            {rewardsLoading ? (
+              <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+            ) : (
+              <span className="text-2xl font-bold text-white">{rewards} ETH</span>
+            )}
           </div>
           <span className="text-gray-300 text-sm">Total rewards earned</span>
         </div>

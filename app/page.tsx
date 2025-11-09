@@ -13,22 +13,15 @@ type View = 'garden' | 'marketplace' | 'my-garden';
 export default function Home() {
   const [currentView, setCurrentView] = useState<View>('garden');
 
-  // Mock data for now - will be replaced with real data later
-  const mockData = {
-    activePlants: 2,
-    totalRewards: "0.03"
-  };
-
   const handleAddPlant = () => {
     setCurrentView('marketplace');
   };
 
   const handlePlantClick = (plantId: string) => {
-    console.log("Plant clicked:", plantId);
+    // Plant click handler
   };
 
   const handleBuySeed = (seedId: number) => {
-    console.log("Seed purchased:", seedId);
     // After buying, close marketplace
     setCurrentView('garden');
   };
@@ -76,8 +69,6 @@ export default function Home() {
         {/* Left Sidebar - Wallet Info */}
         <div className="relative z-20">
           <WalletSidebar 
-            activePlants={mockData.activePlants}
-            totalRewards={mockData.totalRewards}
             currentView={currentView}
             onViewChange={handleViewChange}
           />
