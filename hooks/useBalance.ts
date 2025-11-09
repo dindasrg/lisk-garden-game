@@ -26,7 +26,7 @@ export function useBalance() {
         const rpcClient = getRpcClient({ client, chain: liskSepolia })
         const balanceWei = await rpcClient({
           method: 'eth_getBalance',
-          params: [address, 'latest'],
+          params: [address as `0x${string}`, 'latest'] as [address: `0x${string}`, block: 'latest'],
         })
 
         // Convert from Wei to ETH (balanceWei is a hex string)
